@@ -1,0 +1,8 @@
+{
+  "name": "RadarNearest AI",
+  "description": "A high-speed, radar-themed voice assistant that finds the nearest locations using Google Maps grounding and responds with high-quality AI speech.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
