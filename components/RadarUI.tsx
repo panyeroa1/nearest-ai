@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Blip } from '../types';
 
@@ -10,6 +11,7 @@ interface RadarUIProps {
   showRipple: boolean;
   isSpeaking?: boolean;
   blips?: Blip[];
+  activeIndex?: number;
 }
 
 const RadarUI: React.FC<RadarUIProps> = ({ 
@@ -20,7 +22,8 @@ const RadarUI: React.FC<RadarUIProps> = ({
   isStale, 
   showRipple,
   isSpeaking,
-  blips = [] 
+  blips = [],
+  activeIndex = 0
 }) => {
   return (
     <div className="relative w-full aspect-square max-w-[400px] mx-auto flex items-center justify-center p-4">
@@ -47,57 +50,70 @@ const RadarUI: React.FC<RadarUIProps> = ({
       {/* Sweep Animation */}
       <div className={`absolute w-full h-full rounded-full pointer-events-none transition-all duration-1000 ${(isScanning || isLocating) ? 'opacity-100' : 'opacity-20'} ${isStale && !isLocating ? 'radar-sweep-yellow' : 'radar-sweep'}`}></div>
 
-      {/* Result Blips */}
-      {hasResults && !isLocating && blips.map((blip) => {
+      {/* Result Blips & Vectors */}
+      {hasResults && !isLocating && blips.map((blip, index) => {
         const radiusPx = 50; 
         const angleRad = (blip.angle - 90) * (Math.PI / 180);
         const x = 50 + (blip.distanceFactor * radiusPx * Math.cos(angleRad));
         const y = 50 + (blip.distanceFactor * radiusPx * Math.sin(angleRad));
 
+        const isActive = index === activeIndex;
+
         return (
-          <div 
-            key={blip.id}
-            className="absolute w-3 h-3 z-20 group"
-            style={{ 
-              left: `${x}%`, 
-              top: `${y}%`,
-              transform: 'translate(-50%, -50%)'
-            }}
-          >
-            <div className="w-2 h-2 bg-green-300 rounded-full blip animate-blip"></div>
-            <div className="absolute inset-0 w-full h-full border border-green-400 rounded-full animate-ping opacity-20"></div>
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 bg-black/80 border border-green-500/30 rounded text-[7px] text-green-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none font-mono uppercase tracking-tighter">
-              {blip.title}
+          <React.Fragment key={blip.id}>
+            {/* Vector Line (Triangulation) */}
+            {isActive && (
+              <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 100 100">
+                <line 
+                  x1="50" y1="50" x2={x} y2={y} 
+                  stroke="rgba(34, 197, 94, 0.6)" 
+                  strokeWidth="0.5" 
+                  strokeDasharray="2 1"
+                  className="animate-pulse"
+                />
+                <circle cx={x} cy={y} r="2" fill="rgba(34, 197, 94, 0.3)" className="animate-ping" />
+              </svg>
+            )}
+
+            {/* Target Blip */}
+            <div 
+              className="absolute w-3 h-3 z-20 group"
+              style={{ 
+                left: `${x}%`, 
+                top: `${y}%`,
+                transform: 'translate(-50%, -50%)'
+              }}
+            >
+              <div className={`w-2 h-2 rounded-full blip ${isActive ? 'bg-green-300 scale-150 animate-blip' : 'bg-green-600 opacity-60'}`}></div>
+              <div className={`absolute inset-0 w-full h-full border rounded-full animate-ping opacity-20 ${isActive ? 'border-green-400' : 'border-green-800'}`}></div>
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 bg-black/80 border border-green-500/30 rounded text-[7px] text-green-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none font-mono uppercase tracking-tighter">
+                {blip.title}
+              </div>
             </div>
-          </div>
+          </React.Fragment>
         );
       })}
 
       {/* Center Blip (User Location) */}
       <div className="relative flex items-center justify-center scale-125">
-         {/* Success Ripple Effect */}
          {showRipple && (
            <div className="absolute w-full h-full flex items-center justify-center pointer-events-none">
              <div className="absolute w-20 h-20 border-4 border-green-400 rounded-full animate-ripple"></div>
            </div>
          )}
 
-         {/* Locating / Syncing Ring */}
          {isLocating && (
            <div className="absolute w-8 h-8 border-2 border-dashed border-cyan-400/60 rounded-full animate-spin"></div>
          )}
          
-         {/* Warning Aura for Stale Data */}
          {isStale && !isLocating && (
            <div className="absolute w-10 h-10 border border-yellow-500/30 rounded-full animate-ping"></div>
          )}
 
-         {/* Speaking Ripple */}
          {isSpeaking && (
            <div className="absolute w-12 h-12 bg-green-400/30 rounded-full animate-ping"></div>
          )}
 
-         {/* Core Blip with smooth color transition */}
          <div 
           className={`w-3.5 h-3.5 rounded-full z-10 transition-all duration-1000 ease-in-out
             ${isLocating ? 'animate-pulse bg-cyan-400 shadow-[0_0_20px_#22d3ee]' : 

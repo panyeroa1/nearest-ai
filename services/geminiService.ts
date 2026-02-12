@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { SearchResult, Location, ReconImage } from "../types";
+import { SearchResult, Location, ReconImage, TargetProfile } from "../types";
 
 const API_KEY = process.env.API_KEY || '';
 
@@ -53,8 +53,17 @@ export const fetchNearestWithMaps = async (
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `Find the nearest ${query} within ${radius}km. 
-      Provide a DETAILED tactical summary briefing for the user including distance, name, and a brief description of the atmosphere or characteristics of the top result.
-      My current location coordinates: lat ${location.lat}, lng ${location.lng}.`,
+      
+      CRITICAL INSTRUCTION: Detect the language of the query "${query}". 
+      You MUST respond in the EXACT same language as the user's query. 
+      If the query is too short to detect, use the native language of the region at lat ${location.lat}, lng ${location.lng}.
+      
+      Provide a DETAILED tactical summary briefing for the user including distance, name, and a brief description.
+      
+      At the end of your response, you MUST include a line formatted EXACTLY as:
+      METADATA: {"name": "Exact Name", "phone": "Contact Number or N/A", "summary": "Quick tactical summary", "eta": "Calculated travel time (e.g. 5m)", "heading": "Direction from user (e.g. NW)"}
+      
+      Respond in an authoritative, professional tactical style.`,
       config: {
         tools: [{ googleMaps: {} }],
         toolConfig: {
@@ -68,9 +77,21 @@ export const fetchNearestWithMaps = async (
       },
     });
 
-    const text = response.text || "No target signatures detected in current radius.";
+    let fullText = response.text || "No target signatures detected in current radius.";
+    let profile: TargetProfile | undefined;
+
+    // Parse Metadata
+    const metaMatch = fullText.match(/METADATA:\s*({.*})/);
+    if (metaMatch) {
+      try {
+        profile = JSON.parse(metaMatch[1]);
+        fullText = fullText.replace(metaMatch[0], "").trim();
+      } catch (e) {
+        console.error("Metadata parse error", e);
+      }
+    }
+
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    
     const sources = chunks
       .filter((c: any) => c.maps)
       .map((c: any) => ({
@@ -78,7 +99,7 @@ export const fetchNearestWithMaps = async (
         uri: c.maps.uri,
       }));
 
-    return { text, sources, isThinking: false };
+    return { text: fullText, sources, isThinking: false, profile };
   } catch (error) {
     console.error("Maps search error:", error);
     return { 
@@ -99,7 +120,7 @@ export const generateReconImage = async (placeName: string, query: string): Prom
       model: 'gemini-2.5-flash-image',
       contents: {
         parts: [
-          { text: `A high-tech tactical reconnaissance satellite view of a ${query} named "${placeName}". Dramatic, cinematic lighting, futuristic map overlay elements, blueprint style details, slightly stylized but realistic professional drone photography look.` },
+          { text: `A high-tech tactical reconnaissance satellite view showing the location of "${placeName}". Dramatic bird's-eye view, futuristic red/green map markers, data-stream overlays, digital triangulation lines showing the path to the target. Blueprint aesthetics.` },
         ],
       },
       config: {
@@ -131,7 +152,7 @@ export const generateSpeech = async (text: string): Promise<string | undefined> 
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ 
         parts: [{ 
-          text: `Read this tactical briefing clearly and authoritatively: "${text}"` 
+          text: `Read this tactical briefing clearly and authoritatively in its native language: "${text}"` 
         }] 
       }],
       config: {

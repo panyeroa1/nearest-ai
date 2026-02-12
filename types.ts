@@ -21,12 +21,21 @@ export interface ReconImage {
   caption: string;
 }
 
+export interface TargetProfile {
+  name: string;
+  phone?: string;
+  summary: string;
+  eta?: string;
+  heading?: string;
+}
+
 export interface SearchResult {
   text: string;
   sources: GroundingSource[];
   isThinking: boolean;
   blips?: Blip[];
   images?: ReconImage[];
+  profile?: TargetProfile;
 }
 
 export interface VoiceState {
