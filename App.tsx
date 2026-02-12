@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import RadarUI from './components/RadarUI';
 import { fetchNearestWithMaps, generateSpeech, decodeAudioData, decodeBase64, generateReconImage } from './services/geminiService';
-import { playTacticalScanSound, playLockOnSound } from './services/soundService';
+import { playTacticalScanSound, playLockOnSound, playDataStreamSound } from './services/soundService';
 import { Location, SearchResult, VoiceState, Blip, ReconImage } from './types';
 
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -23,7 +23,7 @@ const App: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  const isStale = !!(locationTimestamp && Date.now() - locationTimestamp > 60000); // 1 minute stale
+  const isStale = !!(locationTimestamp && Date.now() - locationTimestamp > 60000);
 
   const initAudioContext = useCallback(() => {
     if (!audioContextRef.current) {
@@ -60,7 +60,6 @@ const App: React.FC = () => {
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = true;
-      recognition.lang = ''; 
       recognition.onresult = (event: any) => {
         const transcript = Array.from(event.results)
           .map((result: any) => (result as any)[0])
@@ -85,46 +84,27 @@ const App: React.FC = () => {
     });
   };
 
-  const nextSlide = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (result?.images && result.images.length > 0) {
-      setCurrentSlideIndex((prev) => (prev + 1) % result.images.length);
-      playLockOnSound();
-    }
-  };
-
-  const prevSlide = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (result?.images && result.images.length > 0) {
-      setCurrentSlideIndex((prev) => (prev - 1 + result.images.length) % result.images.length);
-      playLockOnSound();
-    }
-  };
-
   const handleSearch = async (query: string) => {
-    if (!location) {
-      setResult({ text: "GPS signal lost. Reset coordinates.", sources: [], isThinking: false });
-      return;
-    }
+    if (!location) return;
     setIsProcessing(true);
     setCurrentSlideIndex(0);
     setIsExpanded(false);
-    setResult({ text: 'Acquiring localized target signals...', sources: [], isThinking: true });
+    setResult({ text: 'Analyzing deep establishment metrics...', sources: [], isThinking: true });
 
     playTacticalScanSound();
+    setTimeout(() => playDataStreamSound(), 1200);
 
     const searchData = await fetchNearestWithMaps(query, location, radius);
     const blips = generateBlips(searchData);
     
-    const initialResult = { ...searchData, blips, images: [] };
-    setResult(initialResult);
+    setResult({ ...searchData, blips, images: [] });
     setIsProcessing(false);
 
-    const speechText = initialResult.profile 
-      ? `${initialResult.profile.name}. ${initialResult.text}`
-      : initialResult.text;
-    const audioBase64Promise = generateSpeech(speechText);
-    audioBase64Promise.then(audio => audio && playAudio(audio));
+    const speechText = searchData.profile 
+      ? `Establishment identified: ${searchData.profile.name}. Personnel: ${searchData.profile.owner || 'not listed'}. Analysis complete.`
+      : searchData.text;
+    
+    generateSpeech(speechText).then(audio => audio && playAudio(audio));
 
     const topSources = searchData.sources.slice(0, 3);
     const imagePromises = topSources.map(s => generateReconImage(s.title, query));
@@ -132,9 +112,7 @@ const App: React.FC = () => {
     Promise.all(imagePromises).then(images => {
       const validImages = images.filter((img): img is ReconImage => !!img);
       setResult(prev => prev ? { ...prev, images: validImages } : prev);
-      if (validImages.length > 0) {
-        playLockOnSound();
-      }
+      if (validImages.length > 0) playLockOnSound();
     });
   };
 
@@ -150,7 +128,6 @@ const App: React.FC = () => {
       source.onended = () => setIsSpeaking(false);
       source.start();
     } catch (e) {
-      console.error("Audio playback error:", e);
       setIsSpeaking(false);
     }
   };
@@ -178,87 +155,40 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto h-screen flex flex-col p-6 space-y-4 select-none overflow-hidden relative">
-      {/* Stale Signal Banner */}
       {isStale && !isLocating && (
         <div className="absolute top-0 left-0 right-0 z-[100] bg-yellow-600/90 text-yellow-100 text-[10px] py-1 text-center font-bold tracking-[0.3em] uppercase border-b border-yellow-400 animate-pulse">
-          <i className="fa-solid fa-triangle-exclamation mr-2"></i>
-          Warning: Position Data Stale
+          SIGNAL DEGRADED
         </div>
       )}
 
-      {/* Simplified Header: Just the refresh icon */}
       <header className={`flex justify-end z-50 transition-opacity ${isStale ? 'mt-8' : 'mt-2'}`}>
         <button 
           onClick={fetchLocation}
           disabled={isLocating}
-          title="Reset GPS Signal"
-          className={`w-11 h-11 flex items-center justify-center rounded-full border transition-all active:scale-90 shadow-[0_0_15px_rgba(34,197,94,0.1)] ${
-            isStale && !isLocating 
-              ? 'bg-yellow-900/20 border-yellow-500 text-yellow-500 animate-pulse shadow-[0_0_20px_rgba(234,179,8,0.3)]' 
-              : 'bg-green-900/20 border-green-500/30 text-green-400 hover:bg-green-500/10'
-          } ${isLocating ? 'opacity-50 cursor-not-allowed' : ''}`}
+          className={`w-11 h-11 flex items-center justify-center rounded-full border transition-all active:scale-90 ${isStale ? 'bg-yellow-900/20 border-yellow-500 text-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.4)]' : 'bg-green-900/20 border-green-500/30 text-green-400 shadow-[0_0_15px_rgba(34,197,94,0.1)]'}`}
         >
           <i className={`fa-solid fa-arrows-rotate text-lg ${isLocating ? 'animate-spin' : ''}`}></i>
         </button>
       </header>
 
-      {/* Radar Visualization Area */}
       <div className="relative flex-1 flex flex-col items-center justify-center">
-        {/* Recon Image Slideshow */}
         {result?.images && result.images.length > 0 && (
           <div className="absolute top-0 left-0 right-0 z-40 px-2 animate-in fade-in zoom-in-95 duration-700">
-            <div className="bg-black/80 border border-green-500/30 rounded-xl overflow-hidden shadow-2xl group/slides">
+            <div className="bg-black/90 border border-green-500/30 rounded-2xl overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.8)]">
               <div className="relative aspect-video">
-                <img 
-                  src={result.images[currentSlideIndex].url} 
-                  alt="Recon" 
-                  className="w-full h-full object-cover opacity-80"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/30"></div>
-                
-                {/* Triangulation HUD on Image */}
-                <div className="absolute top-3 left-3 flex flex-col gap-1 pointer-events-none">
-                  <div className="bg-black/60 border-l-2 border-green-500 px-2 py-1 flex flex-col">
-                    <span className="text-[7px] text-green-700 uppercase font-bold">Vector</span>
-                    <span className="text-[10px] text-green-400 font-mono">{result.profile?.heading || '---'}</span>
-                  </div>
-                  <div className="bg-black/60 border-l-2 border-green-500 px-2 py-1 flex flex-col">
-                    <span className="text-[7px] text-green-700 uppercase font-bold">ETA</span>
-                    <span className="text-[10px] text-green-400 font-mono">{result.profile?.eta || '---'}</span>
+                <img src={result.images[currentSlideIndex].url} alt="Recon" className="w-full h-full object-cover opacity-70" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/20"></div>
+                <div className="absolute bottom-3 left-3 flex flex-col gap-1">
+                  <span className="text-[7px] text-green-700 uppercase font-black tracking-widest">{result.images[currentSlideIndex].caption}</span>
+                  <div className="flex gap-2">
+                    <div className="bg-green-500/10 border border-green-500/30 px-2 py-0.5 rounded text-[10px] text-green-400 font-mono">
+                      ETA: {result.profile?.eta || '--'}
+                    </div>
+                    <div className="bg-green-500/10 border border-green-500/30 px-2 py-0.5 rounded text-[10px] text-green-400 font-mono">
+                      BRG: {result.profile?.heading || '--'}
+                    </div>
                   </div>
                 </div>
-
-                {result.images.length > 1 && (
-                  <>
-                    <button 
-                      onClick={prevSlide}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-black/50 border border-green-500/20 rounded-full text-green-400 hover:bg-green-500/20 transition-all active:scale-90 z-50"
-                    >
-                      <i className="fa-solid fa-chevron-left"></i>
-                    </button>
-                    <button 
-                      onClick={nextSlide}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-black/50 border border-green-500/20 rounded-full text-green-400 hover:bg-green-500/20 transition-all active:scale-90 z-50"
-                    >
-                      <i className="fa-solid fa-chevron-right"></i>
-                    </button>
-                  </>
-                )}
-
-                <div className="absolute bottom-2 left-3 right-3 flex justify-between items-end">
-                  <span className="text-[10px] font-mono text-green-400 uppercase tracking-tighter bg-black/40 px-2 py-0.5 rounded border border-green-500/10">
-                    {result.images[currentSlideIndex].caption}
-                  </span>
-                  <div className="flex gap-1">
-                    {result.images.map((_, idx) => (
-                      <div 
-                        key={idx} 
-                        className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${idx === currentSlideIndex ? 'bg-green-400 scale-125' : 'bg-green-900'}`}
-                      ></div>
-                    ))}
-                  </div>
-                </div>
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.5)] animate-[scan_3s_linear_infinite] pointer-events-none"></div>
               </div>
             </div>
           </div>
@@ -266,166 +196,125 @@ const App: React.FC = () => {
 
         <RadarUI 
           isScanning={isProcessing || voiceState.isListening} 
+          radius={radius} 
+          hasResults={!!result && !result.isThinking}
           isLocating={isLocating}
           isStale={isStale}
           showRipple={showRipple}
           isSpeaking={isSpeaking}
-          radius={radius} 
-          hasResults={!!result && !result.isThinking}
           blips={result?.blips}
           activeIndex={currentSlideIndex}
         />
         
         {voiceState.isListening && (
-          <div className="absolute bottom-2 left-0 right-0 text-center z-40 px-4">
-            <div className="inline-block bg-black/95 px-6 py-4 rounded-2xl border border-red-500/40 text-red-400 shadow-[0_0_40px_rgba(220,38,38,0.2)] font-mono animate-pulse">
-              <div className="text-[9px] opacity-70 mb-1 uppercase tracking-[0.3em] font-black italic">Uplink Active</div>
-              <p className="text-lg font-black uppercase tracking-tight">
-                {voiceState.transcript || "..."}
-              </p>
+          <div className="absolute bottom-4 left-0 right-0 text-center z-40 px-4">
+            <div className="inline-block bg-black/95 px-8 py-5 rounded-3xl border border-red-500/40 text-red-400 shadow-[0_0_50px_rgba(239,68,68,0.2)] animate-pulse">
+              <div className="text-[8px] font-black tracking-widest uppercase mb-1 opacity-50">Transmitting Command</div>
+              <p className="text-xl font-black uppercase tracking-tight">{voiceState.transcript || "..."}</p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Detailed Results Display: Simplified Header */}
       {result && (
-        <div className={`bg-black/80 border border-green-800/40 p-4 rounded-3xl backdrop-blur-xl transition-all duration-500 shadow-2xl relative overflow-hidden flex flex-col ${isExpanded ? 'h-[320px]' : 'h-[160px]'}`}>
-          <div className="flex items-center justify-between mb-2">
+        <div className={`bg-black/90 border border-green-900/50 p-5 rounded-[2.5rem] backdrop-blur-2xl transition-all duration-700 shadow-[0_0_60px_rgba(0,0,0,0.6)] flex flex-col ${isExpanded ? 'h-[440px]' : 'h-[170px]'}`}>
+          <div className="flex items-center justify-between mb-4">
              <div className="flex items-center gap-2">
-               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-               <div className="text-[8px] font-mono text-green-700 uppercase tracking-[0.2em] font-black">Triangulation Profile</div>
+               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+               <div className="text-[9px] font-mono text-green-700 uppercase font-black tracking-[0.2em]">Personnel Dossier // Level 1</div>
              </div>
-             <button 
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="w-6 h-6 flex items-center justify-center text-green-500/50 hover:text-green-400 transition-colors"
-             >
-                <i className={`fa-solid ${isExpanded ? 'fa-chevron-down' : 'fa-chevron-up'} text-xs`}></i>
+             <button onClick={() => setIsExpanded(!isExpanded)} className="w-8 h-8 flex items-center justify-center bg-green-500/5 rounded-full border border-green-500/10 text-green-500">
+               <i className={`fa-solid ${isExpanded ? 'fa-chevron-down' : 'fa-chevron-up'} text-xs`}></i>
              </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-            {/* Primary Target Profile */}
+          <div className="flex-1 overflow-y-auto pr-2 space-y-5">
             {result.profile && (
-              <div className="bg-green-500/5 border border-green-500/20 p-3 rounded-xl space-y-2 animate-in fade-in duration-500">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <h2 className="text-lg font-black text-green-100 tracking-tight leading-none uppercase pr-2">{result.profile.name}</h2>
+              <div className="animate-in fade-in duration-500 slide-in-from-bottom-2">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-xl font-black text-green-100 uppercase tracking-tight leading-none mb-1">{result.profile.name}</h2>
+                    <div className="flex items-center gap-2">
+                       <span className="text-[10px] text-green-500/80 font-mono font-bold">STAFF:</span>
+                       <span className="text-[10px] text-green-400 font-mono italic">{result.profile.owner || 'Unknown'}</span>
+                    </div>
                   </div>
-                  {result.profile.phone && result.profile.phone !== "N/A" && (
-                    <a href={`tel:${result.profile.phone}`} className="bg-green-400 text-green-950 px-3 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-2 active:scale-95 transition-transform">
-                      <i className="fa-solid fa-phone"></i>
-                      DIAL
-                    </a>
-                  )}
-                </div>
-                
-                <div className="grid grid-cols-3 gap-2 border-t border-green-500/10 pt-2">
-                   <div className="space-y-0.5 text-center border-r border-green-500/10">
-                      <span className="text-[7px] text-green-700 uppercase block">ETA</span>
-                      <span className="text-[10px] text-green-400 font-mono uppercase font-bold">{result.profile.eta || '---'}</span>
-                   </div>
-                   <div className="space-y-0.5 text-center border-r border-green-500/10">
-                      <span className="text-[7px] text-green-700 uppercase block">Bearing</span>
-                      <span className="text-[10px] text-green-400 font-mono uppercase font-bold">{result.profile.heading || '---'}</span>
-                   </div>
-                   <div className="space-y-0.5 text-center">
-                      <span className="text-[7px] text-green-700 uppercase block">Distance</span>
-                      <span className="text-[10px] text-green-400 font-mono">Nearby</span>
-                   </div>
+                  <div className="flex gap-2">
+                    {result.profile.phone && result.profile.phone !== "N/A" && (
+                      <a href={`tel:${result.profile.phone}`} className="w-10 h-10 flex items-center justify-center bg-green-400 text-green-950 rounded-xl shadow-[0_0_15px_rgba(34,197,94,0.4)] active:scale-90 transition-all">
+                        <i className="fa-solid fa-phone"></i>
+                      </a>
+                    )}
+                    {result.profile.fastestRouteUrl && (
+                      <a href={result.profile.fastestRouteUrl} target="_blank" rel="noreferrer" className="w-10 h-10 flex items-center justify-center bg-green-400 text-green-950 rounded-xl shadow-[0_0_15px_rgba(34,197,94,0.4)] active:scale-90 transition-all">
+                        <i className="fa-solid fa-route"></i>
+                      </a>
+                    )}
+                  </div>
                 </div>
 
-                <div className="bg-black/40 p-2 rounded border border-green-900/30">
-                  <p className="text-[11px] text-green-200/80 leading-snug font-mono italic">
-                    {result.profile.summary}
-                  </p>
+                <div className="bg-green-500/5 border border-green-500/20 p-3 rounded-2xl mb-4">
+                   <span className="text-[8px] text-green-700 font-black uppercase block mb-1.5">Lead Personnel Biography</span>
+                   <p className="text-[11px] text-green-200/90 leading-relaxed font-mono italic">
+                      {result.profile.bio || "No professional biography currently available in public records."}
+                   </p>
+                </div>
+
+                {result.profile.credentials && result.profile.credentials.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    {result.profile.credentials.map((cred, i) => (
+                      <div key={i} className="bg-black/40 border border-green-900/40 p-2 rounded-xl flex items-center gap-2">
+                        <i className="fa-solid fa-certificate text-[8px] text-green-500"></i>
+                        <span className="text-[9px] text-green-400 font-mono truncate">{cred}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                   <span className="text-[8px] text-green-700 font-black uppercase block">Intelligence Grounding</span>
+                   <div className="grid grid-cols-1 gap-1.5">
+                      {result.groundingLinks?.slice(0, 5).map((link, i) => (
+                        <a key={i} href={link.uri} target="_blank" rel="noreferrer" className="flex items-center justify-between bg-black/40 border border-green-900/30 p-2 rounded-xl hover:bg-green-500/5 transition-colors">
+                           <span className="text-[9px] text-green-400/80 font-mono truncate pr-4">{link.title}</span>
+                           <i className="fa-solid fa-link text-[8px] text-green-900"></i>
+                        </a>
+                      ))}
+                   </div>
                 </div>
               </div>
             )}
-
-            {/* General Briefing */}
-            <div className="space-y-2">
-              <p className="text-xs text-green-100 leading-relaxed font-mono pr-4" dir="auto">
-                {result.isThinking ? (
-                  <span className="flex items-center gap-2">
-                    <i className="fa-solid fa-sync animate-spin opacity-50"></i>
-                    <span className="animate-pulse tracking-widest text-[10px]">Triangulating...</span>
-                  </span>
-                ) : result.text}
+            {!result.profile && (
+              <p className="text-xs text-green-100 font-mono leading-relaxed px-1">
+                {result.isThinking ? "Aggregating deep factual records..." : result.text}
               </p>
-              
-              <div className="grid grid-cols-1 gap-1.5 pb-4">
-                {result.sources.map((s, i) => (
-                  <a 
-                    key={i} 
-                    href={s.uri} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    onMouseEnter={() => result.images?.[i] && setCurrentSlideIndex(i)}
-                    className={`text-[10px] px-3 py-2 rounded-xl transition-all border font-mono flex items-center justify-between group active:scale-95 ${i === currentSlideIndex ? 'bg-green-500/20 border-green-500/30 text-green-200' : 'bg-green-500/5 border-green-500/10 text-green-400'}`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className={`w-1.5 h-1.5 rounded-full ${i === currentSlideIndex ? 'bg-green-400 animate-ping' : 'bg-green-500'}`}></span>
-                      {s.title}
-                    </span>
-                    <i className="fa-solid fa-arrow-up-right-from-square opacity-30 group-hover:opacity-100"></i>
-                  </a>
-                ))}
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Controls Container */}
-      <div className="space-y-4 bg-green-950/20 p-4 rounded-3xl border border-green-500/5">
-        <div className="flex items-center space-x-4">
-          <div className="bg-green-900/40 p-2.5 rounded-xl border border-green-800/50">
-             <i className="fa-solid fa-expand text-green-500 text-sm"></i>
-          </div>
-          <div className="flex-1 space-y-1">
-             <div className="flex justify-between text-[10px] uppercase font-mono text-green-700 tracking-widest font-black">
-               <span>Radius</span>
-               <span className="text-green-400">{radius}km</span>
-             </div>
-             <input 
-              type="range" 
-              min="1" 
-              max="50" 
-              value={radius} 
-              onChange={(e) => setRadius(parseInt(e.target.value))}
-              className="w-full h-1.5 bg-green-950 rounded-lg appearance-none cursor-pointer accent-green-400"
-            />
-          </div>
+      <div className="space-y-4 bg-green-950/20 p-5 rounded-[2.5rem] border border-green-500/5">
+        <div className="flex-1 space-y-2">
+           <div className="flex justify-between text-[10px] font-mono text-green-700 uppercase font-black tracking-widest">
+             <span>Search Radius</span> <span className="text-green-400">{radius}km</span>
+           </div>
+           <input type="range" min="1" max="50" value={radius} onChange={(e) => setRadius(parseInt(e.target.value))} className="w-full h-1.5 bg-green-950 rounded-full appearance-none cursor-pointer accent-green-400" />
         </div>
 
         <button
-          onMouseDown={startListening}
-          onMouseUp={stopListening}
-          onTouchStart={startListening}
-          onTouchEnd={stopListening}
+          onMouseDown={startListening} onMouseUp={stopListening} onTouchStart={startListening} onTouchEnd={stopListening}
           disabled={isProcessing || isLocating}
-          className={`w-full py-6 rounded-2xl font-black text-xl transition-all active:scale-[0.97] flex flex-col items-center justify-center shadow-2xl relative overflow-hidden group
-            ${voiceState.isListening 
-              ? 'bg-red-600 text-white shadow-[0_0_50px_rgba(220,38,38,0.3)]' 
-              : isSpeaking ? 'bg-green-800 text-green-200' : 'bg-green-400 text-green-950'
-            }
-            ${(isProcessing || isLocating) ? 'opacity-20 grayscale' : ''}
-          `}
+          className={`w-full py-8 rounded-[2rem] font-black text-xl transition-all active:scale-[0.97] flex flex-col items-center justify-center relative overflow-hidden group shadow-2xl ${voiceState.isListening ? 'bg-red-600 shadow-[0_0_30px_rgba(220,38,38,0.4)]' : isSpeaking ? 'bg-green-800' : 'bg-green-400 text-green-950 shadow-[0_0_30px_rgba(34,197,94,0.3)]'}`}
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-          
-          <div className="flex items-center gap-4 z-10">
-             <i className={`fa-solid ${voiceState.isListening ? 'fa-bolt animate-bounce' : isSpeaking ? 'fa-tower-broadcast animate-pulse' : 'fa-microphone-lines'}`}></i>
-             <span className="tracking-tighter italic font-black uppercase">
-                {voiceState.isListening ? 'Sending...' : isSpeaking ? 'Broadcasting' : 'Command'}
-             </span>
+          <div className="flex items-center gap-4 z-10 font-black italic uppercase tracking-tighter">
+             <i className={`fa-solid ${voiceState.isListening ? 'fa-bolt-lightning animate-bounce' : isSpeaking ? 'fa-tower-broadcast animate-pulse' : 'fa-microphone-lines text-2xl'}`}></i>
+             <span className="text-2xl">{voiceState.isListening ? 'RECEIVING' : isSpeaking ? 'OUTPUT' : 'UPLINK'}</span>
           </div>
         </button>
       </div>
 
-      <footer className="text-[7px] text-center text-green-900/60 uppercase tracking-[0.4em] font-mono pb-2 italic">
-        S-05 // GRID-SYNC
+      <footer className="text-[7px] text-center text-green-900/60 uppercase tracking-[0.5em] font-mono pb-2 italic">
+        S-05 // BIOMETRIC & PLACEMENT ANALYSIS ACTIVE
       </footer>
     </div>
   );

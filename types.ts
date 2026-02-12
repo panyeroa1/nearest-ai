@@ -27,6 +27,11 @@ export interface TargetProfile {
   summary: string;
   eta?: string;
   heading?: string;
+  owner?: string;
+  bio?: string;
+  credentials?: string[];
+  socials?: string[];
+  fastestRouteUrl?: string;
 }
 
 export interface SearchResult {
@@ -36,6 +41,7 @@ export interface SearchResult {
   blips?: Blip[];
   images?: ReconImage[];
   profile?: TargetProfile;
+  groundingLinks?: GroundingSource[];
 }
 
 export interface VoiceState {

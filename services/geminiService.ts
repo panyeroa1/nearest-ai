@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { SearchResult, Location, ReconImage, TargetProfile } from "../types";
+import { SearchResult, Location, ReconImage, TargetProfile, GroundingSource } from "../types";
 
 const API_KEY = process.env.API_KEY || '';
 
@@ -8,9 +8,6 @@ export const getGeminiClient = () => {
   return new GoogleGenAI({ apiKey: API_KEY });
 };
 
-/**
- * Decodes raw PCM audio data from Gemini TTS
- */
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
@@ -30,9 +27,6 @@ export async function decodeAudioData(
   return buffer;
 }
 
-/**
- * Simple Base64 decoder
- */
 export function decodeBase64(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -52,20 +46,22 @@ export const fetchNearestWithMaps = async (
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Find the nearest ${query} within ${radius}km. 
+      contents: `DEEP SCAN INITIATED: Find the nearest ${query} within ${radius}km. 
       
-      CRITICAL INSTRUCTION: Detect the language of the query "${query}". 
-      You MUST respond in the EXACT same language as the user's query. 
-      If the query is too short to detect, use the native language of the region at lat ${location.lat}, lng ${location.lng}.
+      PHASE 1 (GEO-LOC): Pinpoint exact establishment.
+      PHASE 2 (INTEL): Use Google Search Grounding to extract:
+      - Name of owner/proprietor or head professional (e.g. Lead Surgeon, Head Chef).
+      - Professional biography or educational background of the lead staff.
+      - Factual public records regarding establishment history.
+      - Official contact methods.
       
-      Provide a DETAILED tactical summary briefing for the user including distance, name, and a brief description.
+      Respond in an authoritative tactical dossier format in the user's language.
       
-      At the end of your response, you MUST include a line formatted EXACTLY as:
-      METADATA: {"name": "Exact Name", "phone": "Contact Number or N/A", "summary": "Quick tactical summary", "eta": "Calculated travel time (e.g. 5m)", "heading": "Direction from user (e.g. NW)"}
-      
-      Respond in an authoritative, professional tactical style.`,
+      At the end of your response, include this EXACT JSON block:
+      METADATA: {"name": "Place Name", "phone": "Phone", "summary": "Brief factual summary", "eta": "Calculated travel time", "heading": "Bearing (e.g. N)", "owner": "Owner/Lead Name", "bio": "Professional biography summary", "credentials": ["Fact 1", "Fact 2"], "fastestRouteUrl": "https://www.google.com/maps/dir/?api=1&destination=LAT,LNG"}
+      `,
       config: {
-        tools: [{ googleMaps: {} }],
+        tools: [{ googleMaps: {} }, { googleSearch: {} }],
         toolConfig: {
           retrievalConfig: {
             latLng: {
@@ -77,10 +73,9 @@ export const fetchNearestWithMaps = async (
       },
     });
 
-    let fullText = response.text || "No target signatures detected in current radius.";
+    let fullText = response.text || "Signal interrupted.";
     let profile: TargetProfile | undefined;
 
-    // Parse Metadata
     const metaMatch = fullText.match(/METADATA:\s*({.*})/);
     if (metaMatch) {
       try {
@@ -92,49 +87,39 @@ export const fetchNearestWithMaps = async (
     }
 
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = chunks
-      .filter((c: any) => c.maps)
-      .map((c: any) => ({
-        title: c.maps.title || "Target Identified",
-        uri: c.maps.uri,
-      }));
+    const groundingLinks: GroundingSource[] = chunks
+      .map((c: any) => {
+        if (c.maps) return { title: c.maps.title || "Map Link", uri: c.maps.uri };
+        if (c.web) return { title: c.web.title || "Reference", uri: c.web.uri };
+        return null;
+      })
+      .filter((l): l is GroundingSource => l !== null);
 
-    return { text: fullText, sources, isThinking: false, profile };
+    const sources = groundingLinks.filter(l => l.uri.includes('google.com/maps'));
+
+    return { text: fullText, sources, isThinking: false, profile, groundingLinks };
   } catch (error) {
-    console.error("Maps search error:", error);
-    return { 
-      text: "Radar uplink failure. Check satellite connection.", 
-      sources: [], 
-      isThinking: false 
-    };
+    console.error("Deep search failure:", error);
+    return { text: "Tactical data link severed.", sources: [], isThinking: false };
   }
 };
 
-/**
- * Generates a tactical visual representation of a location
- */
 export const generateReconImage = async (placeName: string, query: string): Promise<ReconImage | undefined> => {
   const ai = getGeminiClient();
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
-        parts: [
-          { text: `A high-tech tactical reconnaissance satellite view showing the location of "${placeName}". Dramatic bird's-eye view, futuristic red/green map markers, data-stream overlays, digital triangulation lines showing the path to the target. Blueprint aesthetics.` },
-        ],
+        parts: [{ text: `A futuristic tactical reconnaissance satellite scan showing the building of "${placeName}". High-contrast, thermal filters, digital triangulation lines, 4K resolution, cinematic lighting.` }],
       },
-      config: {
-        imageConfig: {
-          aspectRatio: "16:9",
-        },
-      },
+      config: { imageConfig: { aspectRatio: "16:9" } },
     });
 
     for (const part of response.candidates?.[0]?.content?.parts || []) {
       if (part.inlineData) {
         return {
           url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
-          caption: `RECON SCAN: ${placeName}`
+          caption: `SATELLITE LOCK: ${placeName}`
         };
       }
     }
@@ -146,28 +131,17 @@ export const generateReconImage = async (placeName: string, query: string): Prom
 
 export const generateSpeech = async (text: string): Promise<string | undefined> => {
   const ai = getGeminiClient();
-  
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ 
-        parts: [{ 
-          text: `Read this tactical briefing clearly and authoritatively in its native language: "${text}"` 
-        }] 
-      }],
+      contents: [{ parts: [{ text: `Attention. ${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-          },
-        },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } } },
       },
     });
-
     return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
   } catch (error) {
-    console.error("TTS generation error:", error);
     return undefined;
   }
 };
